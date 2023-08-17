@@ -758,7 +758,7 @@ begin
 
     LayerStack := Board.MasterLayerStack;
 //  Check AD version for layer stack version
-    VerMajor := GetBuildNumberPart(Client.GetProductVersion);
+    VerMajor := GetBuildNumberPart(Client.GetProductVersion, 0);
     MaxMechLayers := AD17MaxMechLayers;
     LegacyMLS     := true;
     if (VerMajor >= AD19VersionMajor) then
