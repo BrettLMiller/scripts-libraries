@@ -26,7 +26,7 @@ const
     cCtrlKey            = 3; // available for use during component and location selection
     cConfigFileName     = 'QuickSilkSettings.ini';
     cScriptTitle        = 'QuickSilk';
-    cScriptVersion      = '1.11';
+    cScriptVersion      = '1.21';
     cDEBUGLEVEL         = 0;
 
 var
@@ -62,6 +62,7 @@ var
 
 procedure   _GUI; forward;
 procedure   _QuickSilk; forward;
+procedure   _QuickSilkCopy; forward;
 procedure   About; forward;
 function    AutoMove(var NameOrComment : IPCB_Text; ParentOnly : Boolean = True; StartDist : TCoord = 200000; ForceAutoPos : TTextAutoposition = eAutoPos_Manual) : TCoord; forward;
 function    AutoPosDeltaGetMax(var NameOrComment : IPCB_Text; autoPos : TTextAutoposition; bAnyAngleFlag : Boolean = False) : TCoord; forward;
@@ -72,11 +73,13 @@ procedure   ChangeTextUnits(Units : TUnit); forward;
 function    ConfigFile_GetPath(dummy : String = '') : String; forward;
 procedure   ConfigFile_Read(AFileName : String); forward;
 procedure   ConfigFile_Write(AFileName : String); forward;
+procedure   CopySilkscreenRelative(SourceComp, TargetComp : IPCB_Component; bDesignator, bRelRotation : Boolean = True); forward;
 function    CountValidInSelected : Integer; forward;
 function    DeselectInvalid : Integer; forward;
 function    DocumentIsPCB : Boolean; forward;
 function    ESTOP_Assert(dummy : Boolean = False); forward;
 function    ESTOP_ReadAndClear(dummy : Boolean = False) : Boolean; forward;
+function    GetClickDistanceFromBRect(BRect : TCoordRect; const x, y : TCoord) : Double; forward;
 function    GetComponentAtCursor(const sPrompt : TString) : IPCB_Primitive; forward;
 function    GetLayerSet(SlkLayer: Integer; ObjID: Integer) : TV7_LayerSet; forward;
 function    GetMinDesignatorClearance(var Comp : IPCB_Component) : TCoord; forward;
@@ -86,6 +89,7 @@ function    GUI_ForLoopStart(StatusMsg : String; LoopCount : Integer) : Integer;
 procedure   GUI_LoopEnd(dummy : Boolean = False); forward;
 procedure   GUI_LoopProgress(StatusMsg : String = ''); forward;
 procedure   InteractivelyAutoposition; forward;
+procedure   InteractivelyCopyPosition; forward;
 function    IsForbiddenVia(Silk : IPCB_Text; ViaObj : IPCB_ObjectClass) : Boolean; forward;
 function    IsOverlapping(Text: IPCB_ObjectClass; Obj2: IPCB_ObjectClass; ObjID : Integer = eNoObject) : Boolean; forward;
 procedure   IsRuleViolation(ObjectIDSet : TObjectSet; RuleNameStr : String; Clearance : TCoord); forward;
@@ -122,13 +126,13 @@ procedure   TQuickSilkForm.RuleCheckClick(Sender : TObject); forward;
 procedure   TQuickSilkForm.UserKeyPress(Sender : TObject; var Key : Char); forward;
 procedure   AddMessage(MessageClass, MessageText: String); forward;
 function    CalculateCentroid(const contour : IPCB_Contour; out CentroidX : TCoord; out CentroidY : TCoord) : Boolean; forward;
-procedure   ClientDeSelectAll(dummy : Boolean = False); forward;
+procedure   ClientDeselectAll(dummy : Boolean = False); forward;
 procedure   ClientZoomRedraw(dummy : Boolean = False); forward;
 procedure   ClientZoomSelected(dummy : Boolean = False); forward;
 function    CoordToDisplayStr(coords : TCoord) : String; forward;
 function    CoordToDisplayX(coords : TCoord) : String; forward;
 function    CoordToDisplayY(coords : TCoord) : String; forward;
-procedure   CopyTextFormatFromTo(SourceText : IPCB_Text; TargetText : IPCB_Text); forward;
+procedure   CopyTextFormatFromTo(SourceText : IPCB_Text; TargetText : IPCB_Text; CopyLayer : Boolean = True); forward;
 function    DebugContourInfo(contour : IPCB_Contour) : TStringList; forward;
 function    DebugGeometricPolygonInfo(poly : IPCB_GeometricPolygon) : TStringList; forward;
 function    DebugLevelStr(dummy : String = '') : String; forward;
@@ -192,6 +196,12 @@ begin
     InteractivelyAutoposition;
 end;
 
+{ wrapper for InteractivelyCopyPosition that sorts at the top of the list }
+procedure   _QuickSilkCopy;
+begin
+    InteractivelyCopyPosition;
+end;
+
 procedure   About;
 var
     MsgText : string;
@@ -202,6 +212,8 @@ begin
         sLineBreak +
         'Use "_QuickSilk" to interactively place Designator or Comment for individual components.' + sLineBreak +
         sLineBreak +
+        'Use "_QuickSilkCopy" to interactively copy Designator or Comment placement and formatting from one component to others.' + sLineBreak +
+        sLineBreak +
         'Updated versions and documentation may be found here:' + sLineBreak +
         'https://github.com/Altium-Designer-addons/scripts-libraries' + sLineBreak +
         '/tree/master/Scripts - PCB/QuickSilk' + sLineBreak +
@@ -210,7 +222,7 @@ begin
         ConfigFile_GetPath;
 
     ShowInfo(MsgText, 'About');
-end; { About }
+end;
 
 function    AutoMove(var NameOrComment : IPCB_Text; ParentOnly : Boolean = True; StartDist : TCoord = 200000; ForceAutoPos : TTextAutoposition = eAutoPos_Manual) : TCoord;
 const
@@ -844,7 +856,9 @@ var
     ConfigDebugCaption  : String;
     SettingsDebugFile   : String;
     SettingsDebugList   : TStringList;
+    NewSettings         : Boolean;
 begin
+    NewSettings := False;
     LocalSettingsFile := ExtractFilePath(GetRunningScriptProjectName) + cConfigFileName;
 
     // set CheckBoxLocalSettings.Checked to true if local settings file exists
@@ -868,12 +882,14 @@ begin
     // Check for old MoveAPdesignators2 file if the provided file doesn't exist
     if not FileExists(AFileName) then
     begin
+        NewSettings := True; // set flag to immediately save default settings
+
         AFileName := ClientAPI_SpecialFolder_AltiumApplicationData + '\MoveAPdesignators2Settings.ini';
         if not FileExists(AFileName) then
         begin
             // ini file doesn't exist, try to fall back on even older format file
             LoadPresetListFromFile(0);
-            exit;
+            //exit; // don't actually need to exit if fallback happens, just override defaults if used
         end;
     end;
 
@@ -949,6 +965,8 @@ begin
     finally
         IniFile.Free;
     end;
+
+    if NewSettings then ConfigFile_Write(ConfigFile_GetPath);
 end;
 
 procedure   ConfigFile_Write(AFileName : String);
@@ -992,6 +1010,90 @@ begin
     finally
         IniFile.Free;
     end;
+end;
+
+procedure   CopySilkscreenRelative(SourceComp, TargetComp : IPCB_Component; bDesignator, bRelRotation : Boolean = True);
+var
+    DeltaX, DeltaY      : TCoord;
+    DeltaAngle          : Double;
+    SourceNameOrComment : IPCB_Text;
+    TargetNameOrComment : IPCB_Text;
+begin
+    if SourceComp = nil then exit;
+    if TargetComp = nil then exit;
+
+    if SourceComp.Layer <> TargetComp.Layer then
+    begin
+        ShowError('Script only works for components on the same side');
+        exit;
+    end;
+
+    if bDesignator then
+    begin
+        SourceNameOrComment := SourceComp.Name ;
+        TargetNameOrComment := TargetComp.Name ;
+    end
+    else
+    begin
+        SourceNameOrComment := SourceComp.Comment;
+        TargetNameOrComment := TargetComp.Comment;
+    end;
+
+    DeltaX := SourceNameOrComment.SnapPointX - SourceComp.x;
+    DeltaY := SourceNameOrComment.SnapPointY - SourceComp.y;
+    if (SourceNameOrComment.Layer = eBottomOverlay) then DeltaAngle := SourceComp.Rotation - SourceNameOrComment.Rotation
+    else DeltaAngle := SourceNameOrComment.Rotation - SourceComp.Rotation;
+
+    if not SourceNameOrComment.AdvanceSnapping then
+    begin
+        SourceNameOrComment.BeginModify;
+        try
+            SourceNameOrComment.AdvanceSnapping := True;
+        finally
+            SourceNameOrComment.EndModify;
+            SourceNameOrComment.GraphicallyInvalidate;
+        end;
+    end;
+
+    TargetNameOrComment.BeginModify;
+    try
+        if bDesignator then
+        begin
+            if TargetComp.NameOn <> SourceComp.NameOn then
+            begin
+                TargetComp.BeginModify;
+                TargetComp.NameOn := SourceComp.NameOn;
+                TargetComp.EndModify;
+            end;
+        end
+        else
+        begin
+            if TargetComp.CommentOn <> SourceComp.CommentOn then
+            begin
+                TargetComp.BeginModify;
+                TargetComp.CommentOn := SourceComp.CommentOn;
+                TargetComp.EndModify;
+            end;
+        end;
+
+        TargetNameOrComment.AdvanceSnapping := True;
+
+        CopyTextFormatFromTo(SourceNameOrComment, TargetNameOrComment, False);
+
+        if bDesignator then TargetComp.ChangeNameAutoposition(eAutoPos_Manual) else TargetComp.ChangeCommentAutoposition(eAutoPos_Manual);
+
+        TargetNameOrComment.Rotation := SourceNameOrComment.Rotation;
+        //TargetNameOrComment.MoveToXY(TargetComp.x + DeltaX, TargetComp.y + DeltaY);
+        TargetNameOrComment.SnapPointX := TargetComp.x + DeltaX;
+        TargetNameOrComment.SnapPointY := TargetComp.y + DeltaY;
+        //RotateTextToAngle(TargetNameOrComment, TargetComp.Rotation + DeltaAngle, True, False);
+        if bRelRotation then TargetNameOrComment.RotateAroundXY(TargetComp.x, TargetComp.y, TargetComp.Rotation - SourceComp.Rotation);
+    finally
+        TargetNameOrComment.EndModify;
+        TargetNameOrComment.GraphicallyInvalidate;
+    end;
+
+    NormalizeText(TargetNameOrComment)
 end;
 
 function    CountValidInSelected : Integer;
@@ -1082,11 +1184,24 @@ begin
     ESTOP := False;
 end;
 
+function    GetClickDistanceFromBRect(BRect : TCoordRect; const x, y : TCoord) : Double;
+var
+    cX, cY : Double;
+begin
+    // calculate center of rectangle
+    cX := (BRect.left + BRect.right) / 2;
+    cY := (BRect.top + BRect.bottom) / 2;
+
+    // calculate distance from x,y
+    Result := Sqrt(  ( (x - cX) * (x - cX) ) + ( (y - cY) * (y - cY) )  );
+end;
+
 function    GetComponentAtCursor(const sPrompt : TString) : IPCB_Primitive;
 var
     x, y            : TCoord;
     Comp, PrevComp  : IPCB_Component;
     Area, PrevArea  : Int64;
+    Dist, PrevDist  : Double;
     Iter            : IPCB_BoardIterator;
     BRect           : TCoordRect;
     VisibleLayerSet : TV7_LayerSet;
@@ -1124,6 +1239,7 @@ begin
                 begin
                     BRect := Comp.BoundingRectangleNoNameComment;
                     Area := GetComponentAreaMils(Comp);
+                    Dist := GetClickDistanceFromBRect(BRect, x, y);
                     // click should be within bounding rectangle
                     if (BRect.left < x) and (x < BRect.right) and (BRect.bottom < y) and (y < BRect.top) then
                     begin
@@ -1132,16 +1248,20 @@ begin
                             // prioritize component on current layer if previous component is not
                             if IsSameSideLayer(Comp.Layer, Board.CurrentLayer) and not IsSameSideLayer(PrevComp.Layer, Board.CurrentLayer) then Result := Comp
                             // both components are on the same layer, prioritize smaller component
-                            else if IsSameSideLayer(Comp.Layer, PrevComp.Layer) and (Area < PrevArea) then Result := Comp;
+                            else if IsSameSideLayer(Comp.Layer, PrevComp.Layer) and (Area < PrevArea) then Result := Comp
+                            // both components are on the same layer and the same area, prioritize which one has centroid closer to click
+                            else if IsSameSideLayer(Comp.Layer, PrevComp.Layer) and (Area = PrevArea) and (Dist < PrevDist) then Result := Comp;
                         end
                         else
                         begin
                             Result := Comp;
                             Area := GetComponentAreaMils(Comp);
+                            Dist := GetClickDistanceFromBRect(BRect, x, y);
                         end;
 
                         PrevComp := Result;
                         PrevArea := GetComponentAreaMils(Result);
+                        PrevDist := GetClickDistanceFromBRect(BRect, x, y);
                     end;
                     Comp := Iter.NextPCBObject;
                 end;
@@ -1459,9 +1579,9 @@ begin
             else if InSet(cCtrlKey, LocKeySet) then ParentOnly := False else ParentOnly := True; // hold CTRL to also avoid things that are outside parent component
             DebugMessage(3, 'Begin: IsValidPlacement=' + BoolToStr(IsValidPlacement(NameOrComment, ParentOnly), True));
 
-            MoveDist := AutoMove(NameOrComment, ParentOnly, 200000, tc_Autopos);
-
             NormalizeText(NameOrComment);
+
+            MoveDist := AutoMove(NameOrComment, ParentOnly, 200000, tc_Autopos);
 
             NameOrComment.GraphicallyInvalidate;
 
@@ -1562,6 +1682,123 @@ begin
 
 end;
 
+procedure   InteractivelyCopyPosition;
+var
+    ModList                 : TStringList;
+    SourceComp              : IPCB_Component;
+    TargetComp              : IPCB_Component;
+    SourceNameOrComment     : IPCB_Text;
+    TargetNameOrComment     : IPCB_Text;
+    bDesignator             : Boolean;
+    bRelRotation            : Boolean;
+    OldSnapX, OldSnapY      : TCoord;
+begin
+    iDebugLevel := cDEBUGLEVEL;
+    // set AD build flag
+    if (GetBuildNumberPart(Client.GetProductVersion, 0) >= 19) then IsAtLeastAD19 := True else IsAtLeastAD19 := False;
+
+    // Get the document
+    Board := PCBServer.GetCurrentPCBBoard;
+    If Board = Nil Then Exit;
+
+    //ConfigFile_Read(ConfigFile_GetPath);
+
+    if cDEBUGLEVEL > 0 then
+    begin
+        ModList := CreateObject(TStringList);
+        ModList.Delimiter := '|';
+    end;
+
+    SourceComp := Nil;
+    TargetComp := Nil;
+    LocKeySet := MkSet();
+    CompKeySet := MkSet();
+
+    // save original snap grid sizes
+    OldSnapX := Board.SnapGridSizeX;
+    OldSnapY := Board.SnapGridSizeY;
+
+    // reduce grid size
+    if (Board.DisplayUnit xor 1) = eImperial then Board.SnapGridSize := 50000 else Board.SnapGridSize := 39370; // don't believe the SDK, SnapGridSize takes TCoord, not double
+
+    //ClientDeselectAll;
+
+    repeat
+        // process if source component & destination component are selected
+        if Assigned(SourceComp) And Assigned(TargetComp) then
+        begin
+            if InSet(cCtrlKey, CompKeySet) then bDesignator := False else bDesignator := True; // hold CTRL to copy Comment instead
+            if InSet(cAltKey, CompKeySet) then bRelRotation := False else bRelRotation := True; // hold ALT to copy without correcting for components' relative rotations
+
+            if cDEBUGLEVEL >= 2 then iDebugLevel := cDEBUGLEVEL; // if cDEBUGLEVEL is at least 2, reset debug level for each component in case user canceled previously
+            // copy formatting of PCB dimension
+            PCBServer.PreProcess;
+
+            if cDEBUGLEVEL > 0 then
+            begin
+                ModList.Clear;
+                if InSet(cAltKey, LocKeySet) then ModList.Add('ALT');
+                if InSet(cShiftKey, LocKeySet) then ModList.Add('SHIFT');
+                if InSet(cCtrlKey, LocKeySet) then ModList.Add('CTRL');
+                DebugMessage(1, Format('Source %s @ [%s, %s]; ', [ SourceComp.Name.Text, CoordToDisplayX(SourceComp.x), CoordToDisplayY(SourceComp.y) ]) +
+                        Format('Target %s @ [%s, %s]', [ TargetComp.Name.Text, CoordToDisplayX(TargetComp.x), CoordToDisplayY(TargetComp.y) ]) +
+                        sLineBreak + ModList.DelimitedText);
+            end;
+
+            // copy relative location and formatting of silkscreen
+            CopySilkscreenRelative(SourceComp, TargetComp, bDesignator, bRelRotation);
+
+            TargetComp.GraphicallyInvalidate;
+
+            TargetComp := Nil; // clear target component to select another target
+
+            PCBServer.PostProcess;
+            Application.ProcessMessages; // appears to be the only necessary flush for cursor lag? Maybe just calling this once per loop is enough to keep things performant?
+            Board.ViewManager_FullUpdate;
+        end;
+
+        // Get destination component
+        if Assigned(SourceComp) then
+        begin
+            SourceComp.Selected := True;
+            if not SourceComp.Name.IsHidden then SourceComp.Name.Selected := True;
+            if not SourceComp.Comment.IsHidden then SourceComp.Comment.Selected := True;
+            SourceComp.GraphicallyInvalidate;
+
+            // PERFORMANCE: any mouse movement between selecting component and this point will not move the cursor. Application.ProcessMessages forces an update
+            //Application.ProcessMessages; // doesn't appear to be necessary on my machine, but might be performance-based on the machine running script
+            repeat
+                TargetComp := GetComponentAtCursor('Copying silkscreen from ' + SourceComp.Name.Text + '. Choose Target Component (CTRL to position Comment, ALT to use absolute rotation)');
+                if ControlKeyDown then CompKeySet := MkSet(cCtrlKey); // CTRL key held down during component pick
+                if AltKeyDown     then CompKeySet := SetUnion(CompKeySet, MkSet(cAltKey));
+            until Assigned(TargetComp) or (TargetComp = cEsc);
+
+            if (TargetComp = cEsc) then
+            begin
+                if SourceComp.Selected then SourceComp.Selected := False;
+                if SourceComp.Name.Selected then SourceComp.Name.Selected := False;
+                if SourceComp.Comment.Selected then SourceComp.Comment.Selected := False;
+                SourceComp.GraphicallyInvalidate;
+                SourceComp := Nil; // user canceled picking target component, time to get a new source component
+                TargetComp := Nil; // also nil target comp ref
+            end;
+        end;
+
+        if not Assigned(SourceComp) then
+        begin
+            repeat
+                SourceComp := GetComponentAtCursor('Choose Source Component');
+                //if ControlKeyDown then CompKeySet := MkSet(cCtrlKey); // CTRL key held down during component pick
+            until Assigned(SourceComp) or (SourceComp = cEsc);
+        end;
+    until (SourceComp = cESC);
+
+    // restore original snap grid sizes in case they were modified (not going to use try..finally for this since it's not that important)
+    Board.SnapGridSizeX := OldSnapX;
+    Board.SnapGridSizeY := OldSnapY;
+
+end;
+
 function    IsForbiddenVia(Silk : IPCB_Text; ViaObj : IPCB_ObjectClass) : Boolean;
 begin
     Result := False;
@@ -1583,6 +1820,7 @@ end;
 function    IsOverlapping(Text: IPCB_ObjectClass; Obj2: IPCB_ObjectClass; ObjID : Integer = eNoObject) : Boolean;
 var
     TextPoly, ObjPoly: IPCB_GeometricPolygon;
+    TextBRect, ObjBRect: TCoordRect;
     Expansion: TCoord;
 begin
     // If silkscreen object equals itself, return False
@@ -1627,6 +1865,19 @@ begin
     if (ObjID = eConnectionObject) and (Obj2.ObjectId = eRegionObject) and (Obj2.Kind <> eRegionKind_Cutout) then exit
     else if (ObjID = eRegionObject) and (Obj2.ObjectId = eRegionObject) and (Obj2.Kind = eRegionKind_Cutout) then exit;
 
+    // Continue if bounding boxes aren't close enough to possibly violate (add expansion value to text bounding rectangle)
+    TextBRect := Text.BoundingRectangle;
+    TextBRect.Left := TextBRect.Left - Expansion;
+    TextBRect.Right := TextBRect.Right + Expansion;
+    TextBRect.Top := TextBRect.Top + Expansion;
+    TextBRect.Bottom := TextBRect.Bottom - Expansion;
+    ObjBRect := Obj2.BoundingRectangle;
+    if (TextBRect.Right < ObjBRect.Left) or (TextBRect.Left > ObjBRect.Right) or (TextBRect.Bottom > ObjBRect.Top) or (TextBRect.Top < ObjBRect.Bottom) then
+    begin
+        result := False; // bounding rectangles don't intersect
+        exit;
+    end;
+
     // Get geometric polygons for both objects
     TextPoly := GetObjPoly(Text);
     if Obj2.ObjectId = eViaObject then
@@ -1660,7 +1911,7 @@ begin
     ProcessedCount := 0;
     ProgressInt := 0;
 
-    ClientDeSelectAll;
+    ClientDeselectAll;
 
     TextIter := Board.BoardIterator_Create;
     TextIter.AddFilter_ObjectSet(MkSet(eTextObject));
@@ -2878,7 +3129,7 @@ begin
     Result := True;
 end;
 
-procedure   ClientDeSelectAll(dummy : Boolean = False);
+procedure   ClientDeselectAll(dummy : Boolean = False);
 begin
     Client.SendMessage('PCB:DeSelect', 'Scope=All' , 255, Client.CurrentView);
 end;
@@ -2917,7 +3168,7 @@ begin
     result := CoordUnitToString(coords - Board.YOrigin, Board.DisplayUnit xor 1);
 end;
 
-procedure   CopyTextFormatFromTo(SourceText : IPCB_Text; TargetText : IPCB_Text);
+procedure   CopyTextFormatFromTo(SourceText : IPCB_Text; TargetText : IPCB_Text; CopyLayer : Boolean = True);
 begin
     if SourceText = nil then exit;
     if TargetText = nil then exit;
@@ -2949,7 +3200,7 @@ begin
     TargetText.BarCodeFullWidth             := SourceText.BarCodeFullWidth;
     TargetText.BarCodeFullHeight            := SourceText.BarCodeFullHeight;
     TargetText.BarCodeFontName              := SourceText.BarCodeFontName;
-    TargetText.Layer                        := SourceText.Layer;
+    if CopyLayer then TargetText.Layer      := SourceText.Layer;
 
     TargetText.GraphicallyInvalidate;
 end;
@@ -3647,12 +3898,6 @@ end;
 
 procedure   MyPercent_Finish(dummy : Boolean = False);
 begin
-    //if MyPercentActive then
-    //begin
-        //MyStatusBar_SetState(cStatusBar_ProgressBarStop,'');
-        //MyStatusBar_PopStatus;
-    //end;
-
     MyStatusBar_SetState(cStatusBar_ProgressBarStop,'');
     MyStatusBar_PopStatus;
     MyStatusBar_SetState(cStatusBar_SetDefault,'');
