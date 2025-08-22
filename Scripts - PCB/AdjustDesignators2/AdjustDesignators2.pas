@@ -13,6 +13,7 @@
  Improvements:   Miroslav Dobrev, Stanislav Popelka, Brett Miller
 
 
+ 2023-08-17  v2.13   still require LO.V7_LayerID.ID for ML with I > 16
  2023-07-19  v2.12   avoid V7 layerstack methods
                      further hacking to add rotation around XY..
  Update 28/09/2021 - Resize text bounding box before move() to fix multi-line text offsets.
@@ -44,7 +45,7 @@ const
     cBottomSide         = 'Bottom';
     cSeparator          = ' <---> ';
 var
-    VerMajor        : WideString;
+    VerMajor        : integer;
     LegacyMLS       : boolean;
     Board           : IPCB_Board;
     LayerStack      : IPCB_MasterLayerStack;
@@ -57,10 +58,8 @@ var
     slMechPairs     : TStringList;
     slMechSingles   : TStringList;
 
-function Version(const dummy : boolean) : TStringList;                                  forward;
 function GetFirstLayerName(Pair : String) : String;                                     forward;
 function GetSecondLayerName(Pair : String) : String;                                    forward;
-function Version(const dummy : boolean) : TStringList;                                  forward;
 function IsStringANum(Tekst : String) : Boolean;                                        forward;
 function CalculateSize (Size : Integer, S : String, UseStrokeFont : boolean) : Integer; forward;
 function GetMechLayerObject(LS: IPCB_MasterLayerStack, i : integer, var MLID : TLayer) : IPCB_MechanicalLayer; forward;
@@ -759,10 +758,10 @@ begin
 
     LayerStack := Board.MasterLayerStack;
 //  Check AD version for layer stack version
-    VerMajor := Version(true).Strings(0);
+    VerMajor := GetBuildNumberPart(Client.GetProductVersion, 0);
     MaxMechLayers := AD17MaxMechLayers;
     LegacyMLS     := true;
-    if (StrToInt(VerMajor) >= AD19VersionMajor) then
+    if (VerMajor >= AD19VersionMajor) then
     begin
         LegacyMLS     := false;
         MaxMechLayers := AD19MaxMechLayers;
@@ -832,7 +831,7 @@ begin
     end else
     begin
         Result := LS.GetMechanicalLayer(i);
-        MLID := Result.LayerID;
+        MLID := Result.V7_LayerID.ID;
     end;
 end;
 
@@ -857,10 +856,3 @@ begin
    Result := Pair;
 end;
 
-function Version(const dummy : boolean) : TStringList;
-begin
-    Result               := TStringList.Create;
-    Result.Delimiter     := '.';
-    Result.Duplicates    := dupAccept;
-    Result.DelimitedText := Client.GetProductVersion;
-end;
