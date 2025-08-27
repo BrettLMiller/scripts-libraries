@@ -22,18 +22,12 @@ const
 var
     LegacyMLS       : boolean;
     Board           : IPCB_Board;
-    LayerObj        : IPCB_LayerObject;
-    MechLayer1      : IPCB_MechanicalLayer;
-    MechLayer2      : IPCB_MechanicalLayer;
-//    MechPair        : TMechanicalPair;       // IPCB_MechanicalLayerPairs.LayerPair(MechPairIdx)
     ML1, ML2        : integer;
     slMechPairs     : TStringList;
     slMechSingles   : TStringList;
     LayerName1      : WideString;
     LayerName2      : WideString;
 
-
-function GetMechLayerObject(Board: IPCB_Board, i : integer, var MLID : TLayer) : IPCB_MechanicalLayer; forward;
 function GetAllMechEnabledLayers(Board : IPCB_Board) : TStringList; forward;
 
 procedure TFormMechLayerDesignators.ButtonCancelClick(Sender: TObject);
@@ -91,73 +85,76 @@ end;
 
 procedure TFormMechLayerDesignators.RadioButtonSingleClick(Sender: TObject);
 var
-   i : Integer;
+    i : Integer;
 begin
-   if GroupBoxLayer.Caption <> 'Choose Mech Layer:' then
-   begin
-      RadioButtonLayer1.Enabled := True;
-      RadioButtonLayer2.Enabled := False;
+    if GroupBoxLayer.Caption <> 'Choose Mech Layer:' then
+    begin
+        RadioButtonLayer1.Enabled := True;
+        RadioButtonLayer2.Enabled := False;
 
-      RadioButtonLayer2.Caption := 'Single Layer';
-      GroupBoxLayer.Caption := 'Choose Mech Layer:';
+        RadioButtonLayer2.Caption := 'Single Layer';
+        GroupBoxLayer.Caption := 'Choose Mech Layer:';
 
-      ComboBoxLayers.Clear;
+        ComboBoxLayers.Clear;
 
-      for i := 0 to (slMechSingles.Count - 1) do
-      begin
-         ComboBoxLayers.Items.Add(slMechSingles.Names(i));
-      end;
-      if slMechSingles.Count > 0 then
-      begin
-         ComboBoxLayers.SetItemIndex(0);
-         RadioButtonLayer1.Caption := slMechSingles.Names(0);
-      end;
-   end;
+        for i := 0 to (slMechSingles.Count - 1) do
+        begin
+            ComboBoxLayers.Items.Add(slMechSingles.Names(i));
+        end;
+        if slMechSingles.Count > 0 then
+        begin
+            ComboBoxLayers.SetItemIndex(0);
+            RadioButtonLayer1.Caption := slMechSingles.Names(0);
+        end;
+    end;
 end;
 
 procedure TFormMechLayerDesignators.RadioButtonPairClick(Sender: TObject);
 var
-   i : integer;
+    i : integer;
 begin
-   if GroupBoxLayer.Caption <> 'Choose Mech Layer Pair:' then
-   begin
-      RadioButtonLayer1.Enabled := True;
-      RadioButtonLayer2.Enabled := True;
-      GroupBoxLayer.Caption := 'Choose Mech Layer Pair:';
+    if GroupBoxLayer.Caption <> 'Choose Mech Layer Pair:' then
+    begin
+        RadioButtonLayer1.Enabled := True;
+        RadioButtonLayer2.Enabled := True;
+        GroupBoxLayer.Caption := 'Choose Mech Layer Pair:';
 
-      ComboBoxLayers.Clear;
+        ComboBoxLayers.Clear;
 
-      for i := 0 to (slMechPairs.Count - 1) do
-      begin
-         ComboBoxLayers.Items.Add(slMechPairs.Names(i) + ' <----> ' + slMechPairs.ValueFromIndex(i) );
-      end;
-      if slMechPairs.Count > 0 then
-      begin
-          ComboBoxLayers.SetItemIndex(0);
-          RadioButtonLayer1.Caption := slMechPairs.Names(0);
-          RadioButtonLayer2.Caption := slMechPairs.ValueFromIndex(0);
-      end;
-   end;
+        for i := 0 to (slMechPairs.Count - 1) do
+        begin
+            ComboBoxLayers.Items.Add(slMechPairs.Names(i) + ' <----> ' + slMechPairs.ValueFromIndex(i) );
+        end;
+        if slMechPairs.Count > 0 then
+        begin
+            ComboBoxLayers.SetItemIndex(0);
+            RadioButtonLayer1.Caption := slMechPairs.Names(0);
+            RadioButtonLayer2.Caption := slMechPairs.ValueFromIndex(0);
+        end;
+    end;
 end;
 
 procedure TFormMechLayerDesignators.ComboBoxLayersChange(Sender: TObject);
+var
+    i : integer;
 begin
-   if RadioButtonPair.Checked then
-   begin
-      if slMechPairs.Count > 0 then
-      begin
-         RadioButtonLayer1.Caption := slMechPairs.Names(ComboBoxLayers.GetItemIndex);
-         RadioButtonLayer2.Caption := slMechPairs.ValueFromIndex(ComboBoxLayers.GetItemIndex);
-      end;
-   end;
-   if RadioButtonSingle.Checked then
-   begin
-      if slMechSingles.Count > 0 then
-      begin
-         RadioButtonLayer1.Caption := slMechSingles.Names(ComboBoxLayers.GetItemIndex);
-         RadioButtonLayer2.Caption := 'Single Layer';
-      end;
-   end;
+    i := ComboBoxLayers.GetItemIndex;
+    if RadioButtonPair.Checked then
+    begin
+        if slMechPairs.Count > 0 then
+        begin
+            RadioButtonLayer1.Caption := slMechPairs.Names(i);
+            RadioButtonLayer2.Caption := slMechPairs.ValueFromIndex(i);
+        end;
+    end;
+    if RadioButtonSingle.Checked then
+    begin
+        if slMechSingles.Count > 0 then
+        begin
+            RadioButtonLayer1.Caption := slMechSingles.Names(i);
+            RadioButtonLayer2.Caption := 'Single Layer';
+        end;
+    end;
 end;
 
 procedure TFormMechLayerDesignators.ButtonOKClick(Sender: TObject);
@@ -288,6 +285,7 @@ Procedure Start;
 var
     VerMajor        : integer;
     MechLayerPairs  : IPCB_MechanicalLayerPairs;
+//    MechPair        : TMechanicalPair;       // IPCB_MechanicalLayerPairs.LayerPair(MechPairIdx)
     i, j            : Integer;
 
 begin
@@ -349,6 +347,7 @@ function GetAllMechEnabledLayers(Board : IPCB_Board) : TStringList;
 var
     LIterator     : IPCB_LayerObjectIterator;
     LayerObj      : IPCB_LayerObject;
+//    MechLayer     : IPCB_MechanicalLayer;
     MechLayerKind : TMechanicalKind;
     Layer         : TLayer;
     LayerName     : Widestring;
@@ -374,23 +373,5 @@ begin
         if not LegacyMLS then MechLayerKind := LayerObj.Kind;
 
         Result.Add(LayerName + '=' + IntToStr(Layer));
-    end;
-end;
-                                                            // cardinal      V7 LayerID
-function GetMechLayerObject(Board : IPCB_Board, i : integer, var MLID : TLayer) : IPCB_MechanicalLayer;
-var
-    LS: IPCB_MasterLayerStack;
-
-begin
-    LS := Board.MasterLayerStack;
-
-    if LegacyMLS then
-    begin
-        MLID := LayerUtils.MechanicalLayer(i);
-        Result := LS.LayerObject_V7(MLID)
-    end else
-    begin
-        Result := LS.GetMechanicalLayer(i);
-        MLID := Result.V7_LayerID.ID;       // .LayerID returns zero for dielectric
     end;
 end;
