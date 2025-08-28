@@ -310,17 +310,17 @@ begin
 //  slMechSingles.("LayerName=Layer");
     slMechSingles := GetAllMechEnabledLayers(Board);
 
-// sort into layer numeric order assending; Padleft(,4).
+// sort into layer numeric order assending; Padleft(,8).
     for i := 0 to (slMechSingles.Count - 2) do
     begin
-        for j := (i + 1) to (slMechSingles.Count - 1) do
+        for j := 1 to (slMechSingles.Count - 1 - i) do
         begin
-            ML1 := PadLeft(slMechSingles.ValueFromIndex(i), 4);
-            ML2 := PadLeft(slMechSingles.ValueFromIndex(j), 4);
-            if ML1 > ML2 then slMechSingles.Exchange(i, j);
+            ML1 := PadLeft(slMechSingles.ValueFromIndex(j-1), 8);
+            ML2 := PadLeft(slMechSingles.ValueFromIndex(j), 8);
+            if ML1 > ML2 then slMechSingles.Exchange(j-1, j);
         end;
     end;
-
+    
     MechLayerPairs  := Board.MechanicalPairs;
     for i := 0 to (slMechSingles.Count - 1) do
     begin
@@ -346,8 +346,8 @@ end;
 function GetAllMechEnabledLayers(Board : IPCB_Board) : TStringList;
 var
     LIterator     : IPCB_LayerObjectIterator;
-    LayerObj      : IPCB_LayerObject;
-//    MechLayer     : IPCB_MechanicalLayer;
+//    LayerObj      : IPCB_LayerObject;
+    LayerObjr     : IPCB_MechanicalLayer;
     MechLayerKind : TMechanicalKind;
     Layer         : TLayer;
     LayerName     : Widestring;
@@ -356,6 +356,7 @@ begin
     Result := TStringList.Create;
     Result.StrictDelimiter := true;
     Result.NameValueSeparator := '=';
+    
 //  Warning: Iterated LayerObjects may NOT be in any order/sorted !!
     LIterator := Board.LayerIterator;
     LIterator.AddFilter_MechanicalLayers;
@@ -375,3 +376,4 @@ begin
         Result.Add(LayerName + '=' + IntToStr(Layer));
     end;
 end;
+
